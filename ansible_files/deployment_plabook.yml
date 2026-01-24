@@ -1,0 +1,97 @@
+---
+- name: Deploy React App on App Node
+  hosts: deployment
+  become: yes
+
+  vars:
+    app_dir: /var/www/react-app
+    app_user: ubuntu
+
+  tasks:
+    # -------------------------------
+    # System setup
+    # -------------------------------
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - nginx
+          - git
+          - curl
+          - build-essential
+        state: present
+
+    # -------------------------------
+    # Install Node.js 18
+    # -------------------------------
+    - name: Install Node.js 18
+      shell: |
+        curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+        apt-get install -y nodejs
+      args:
+        executable: /bin/bash
+
+    # -------------------------------
+    # App setup
+    # -------------------------------
+    - name: Remove default nginx html directory
+      file:
+        path: /var/www/html
+        state: absent
+
+    - name: Clone React repository
+      git:
+        repo: <GitHub_Repository_URL>
+        dest: "{{ app_dir }}"
+        force: yes
+
+    - name: Fix ownership
+      file:
+        path: "{{ app_dir }}"
+        owner: "{{ app_user }}"
+        group: "{{ app_user }}"
+        recurse: yes
+
+    # -------------------------------
+    # Install dependencies
+    # -------------------------------
+    - name: Install npm dependencies
+      become_user: "{{ app_user }}"
+      shell: npm install
+      args:
+        chdir: "{{ app_dir }}"
+
+    # -------------------------------
+    # Build React app
+    # -------------------------------
+    - name: Build React app
+      become_user: "{{ app_user }}"
+      shell: |
+        export CI=false
+        npm run build
+      args:
+        chdir: "{{ app_dir }}"
+
+    # -------------------------------
+    # Deploy to Nginx
+    # -------------------------------
+    - name: Copy build to nginx root
+      copy:
+        remote_src: yes
+        src: "{{ app_dir }}/build/"
+        dest: /var/www/html/
+
+    - name: Set permissions for nginx
+      file:
+        path: /var/www/html
+        owner: www-data
+        group: www-data
+        recurse: yes
+
+    - name: Restart nginx
+      service:
+        name: nginx
+        state: restarted
